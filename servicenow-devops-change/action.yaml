@@ -1,0 +1,73 @@
+name: 'Trigger ServiceNow Change Control'
+description: 'Triggers a Change Control in ServiceNow for automated deployments.'
+inputs:
+  instance-url:
+    description: 'The URL of your ServiceNow instance.'
+    required: true
+  devops-integration-token:
+    description: 'The ServiceNow DevOps integration token.'
+    required: true
+  tool-id:
+    description: 'The ServiceNow Orchestration Tool ID.'
+    required: true
+  job-name:
+    description: 'The name of the GitHub job triggering the change.'
+    required: true
+    default: 'deploy' # You can set a default if it's consistently 'deploy'
+  short-description:
+    description: 'Short description for the Change Request.'
+    required: true
+  description:
+    description: 'Detailed description for the Change Request.'
+    required: true
+  implementation-plan:
+    description: 'Implementation plan for the Change Request.'
+    required: true
+    default: 'Automated deployment via CI/CD pipeline.'
+  backout-plan:
+    description: 'Backout plan for the Change Request.'
+    required: true
+    default: 'Rollback to previous stable release.'
+  test-plan:
+    description: 'Test plan for the Change Request.'
+    required: true
+    default: 'Verify deployment success through automated tests.'
+  context-github:
+    description: 'GitHub context for the Change Request.'
+    required: true
+    default: 'Verify deployment success through automated tests.'
+  SN_INSTANCE_URL:
+    description: 'ServiceNow instance URL for the Change Request.'
+    required: true
+  SN_DEVOPS_INTEGRATION_TOKEN:
+    description: 'ServiceNow DevOps integration token for authentication.'
+    required: true
+  SN_ORCHESTRATION_TOOL_ID:
+    description: 'ServiceNow Orchestration Tool ID for the Change Request.'
+    required: true    
+runs:
+  using: "composite"
+  steps:
+    - name: Trigger Change Control in ServiceNow
+      uses: ServiceNow/servicenow-devops-change@v2.0.0
+      id: change_creation
+      with:
+        instance-url: ${{ inputs.SN_INSTANCE_URL }}
+        devops-integration-token: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
+        context-github: ${{ inputs.context-github }}
+        job-name: ${{ inputs.job-name }}
+        change-request: >-
+          {
+            "setCloseCode": "true",
+            "autoCloseChange": true,
+            "attributes": {
+              "short_description": "${{ inputs.short-description }}",
+              "description": "${{ inputs.description }}",
+              "implementation_plan": "${{ inputs.implementation-plan }}",
+              "backout_plan": "${{ inputs.backout-plan }}",
+              "test_plan": "${{ inputs.test-plan }}",
+              "assignment_group": "3D51dd7d91fbd0a210de2df6ac5eefdcda",
+              "assigned_to": "3Db316f6ff934d1a90be8bbfcdfaba10cf"
+            }
+          }
