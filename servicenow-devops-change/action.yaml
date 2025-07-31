@@ -43,6 +43,7 @@ runs:
         instance-url: ${{ inputs.SN_INSTANCE_URL }}
         devops-integration-token: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
         tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
+        basic-auth: true
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
         change-request: >-
