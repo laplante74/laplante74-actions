@@ -4,8 +4,11 @@ inputs:
   SN_INSTANCE_URL:
     description: 'ServiceNow instance URL.'
     required: true
-  SN_DEVOPS_INTEGRATION_TOKEN:
-    description: 'ServiceNow DevOps integration token.'
+  SN_USERNAME:
+    description: 'ServiceNow DevOps integration username.'
+    required: true
+  SN_PASSWORD:
+    description: 'ServiceNow DevOps integration password.'
     required: true
   SN_ORCHESTRATION_TOOL_ID:
     description: 'ServiceNow Orchestration Tool ID.'
