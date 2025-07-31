@@ -37,6 +37,17 @@ inputs:
     description: 'GitHub context.'
     required: true
 
+outputs:
+  change_request_number:
+    description: 'The created Change Request number'
+    value: ${{ steps.change_creation.outputs.change_request_number }}
+  change_request_sys_id:
+    description: 'The created Change Request sys_id'
+    value: ${{ steps.change_creation.outputs.change_request_sys_id }}
+  change_request_url:
+    description: 'URL to view the created Change Request'
+    value: ${{ steps.change_creation.outputs.change_request_url }}
+
 runs:
   using: "composite"
   steps:
