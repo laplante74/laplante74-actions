@@ -37,13 +37,14 @@ runs:
   using: "composite"
   steps:
     - name: Trigger Change Control in ServiceNow
-      uses: ServiceNow/servicenow-devops-change@v2.0.0
+      uses: ServiceNow/servicenow-devops-change@v5.1.0
       id: change_creation
       with:
         instance-url: ${{ inputs.SN_INSTANCE_URL }}
-        devops-integration-token: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        devops-integration-user-name: ${{ inputs.SN_USERNAME }}  #This is just for basic authentication GitHUb -> ServiceNow not OAuth
+        devops-integration-user-password: ${{ inputs.SN_PASSWORD }}  #This is just for basic authentication GitHub -> ServiceNow not OAuth
         tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
-        basic-auth: true
+#        basic-auth: true
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
         change-request: >-
