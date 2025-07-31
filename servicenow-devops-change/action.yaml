@@ -71,7 +71,7 @@ runs:
               "implementation_plan": "${{ inputs.implementation-plan }}",
               "backout_plan": "${{ inputs.backout-plan }}",
               "test_plan": "${{ inputs.test-plan }}",
-              "assignment_group": "3Dc26e367d9343a210cd38fde08bba10e3",
-              "assigned_to": "3D5edf55fd934b6210cd38fde08bba10a0"
+              "assignment_group": "c26e367d9343a210cd38fde08bba10e3",
+              "assigned_to": "5edf55fd934b6210cd38fde08bba10a0"
             }
           }
