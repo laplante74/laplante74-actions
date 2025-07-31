@@ -52,7 +52,7 @@ runs:
   using: "composite"
   steps:
     - name: Trigger Change Control in ServiceNow
-      uses: ServiceNow/servicenow-devops-change@v5.1.0
+      uses: ServiceNow/servicenow-devops-change@v6.0.0
       id: change_creation
       with:
         instance-url: ${{ inputs.SN_INSTANCE_URL }}
