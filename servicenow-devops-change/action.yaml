@@ -83,7 +83,7 @@ runs:
               backout_plan: $backout_plan,
               test_plan: $test_plan,
               assignment_group: $assignment_group,
-              assigned_to: $assigned_to
+              assigned_to: $assigned_to,
               work_notes: $work_notes
             }
           }')
