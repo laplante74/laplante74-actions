@@ -74,8 +74,8 @@ runs:
               "assignment_group": "Change-Velocity-Group",
               "assigned_to": "Steven LaPlante",
               "displayValue": true
+            }
           }
-        }
 
     - name: Debug outputs from ServiceNow step
       run: |
@@ -83,3 +83,4 @@ runs:
         echo "DEBUG: CR Sys ID => ${{ steps.change_creation.outputs.change_request_sys_id }}"
         echo "DEBUG: CR URL    => ${{ steps.change_creation.outputs.change_request_url }}"
       shell: bash
+
