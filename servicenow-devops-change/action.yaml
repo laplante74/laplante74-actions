@@ -75,3 +75,10 @@ runs:
               "assigned_to": "5edf55fd934b6210cd38fde08bba10a0"
             }
           }
+
+    - name: Debug outputs from ServiceNow step
+      run: |
+        echo "DEBUG: CR Number => ${{ steps.change_creation.outputs.change_request_number }}"
+        echo "DEBUG: CR Sys ID => ${{ steps.change_creation.outputs.change_request_sys_id }}"
+        echo "DEBUG: CR URL    => ${{ steps.change_creation.outputs.change_request_url }}"
+      shell: bash
