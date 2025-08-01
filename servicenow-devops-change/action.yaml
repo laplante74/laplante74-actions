@@ -39,6 +39,9 @@ inputs:
   assigned-to:
     description: 'The ServiceNow user sys_id to whom the CHG is assigned'
     required: false
+  work-notes:
+    description: 'The status of the actual GitHub deployment'
+    required: false
   context-github:
     description: 'GitHub context.'
     required: true
@@ -69,6 +72,7 @@ runs:
           --arg test_plan "${{ inputs['test-plan'] }}" \
           --arg assignment_group "${{ inputs['assignment-group'] }}" \
           --arg assigned_to "${{ inputs['assigned-to'] }}" \
+          --arg work_notes "${{ inputs['work-notes'] }}" \
           '{
             setCloseCode: "true",
             autoCloseChange: true,
@@ -80,6 +84,7 @@ runs:
               test_plan: $test_plan,
               assignment_group: $assignment_group,
               assigned_to: $assigned_to
+              work_notes: $work_notes
             }
           }')
         echo "$CHANGE_REQUEST_JSON" > change_request.json
