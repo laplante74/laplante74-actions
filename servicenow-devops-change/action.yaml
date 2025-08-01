@@ -72,10 +72,10 @@ runs:
               "backout_plan": "${{ inputs.backout-plan }}",
               "test_plan": "${{ inputs.test-plan }}",
               "assignment_group": "Change-Velocity-Group",
-              "assigned_to": "Steven LaPlante"
-            },
-            "displayValue": true
+              "assigned_to": "Steven LaPlante",
+              "displayValue": true
           }
+        }
 
     - name: Debug outputs from ServiceNow step
       run: |
