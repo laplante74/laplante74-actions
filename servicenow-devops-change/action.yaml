@@ -19,13 +19,13 @@ inputs:
     required: true
     default: 'prod-deploy'
   short-description:
-    description: 'Short description for the Change Request.'
+    description:
     required: true
   description:
-    description: 'Detailed description for the Change Request.'
+    description:
     required: true
   implementation-plan:
-    description: 'Implementation plan.'
+    description:
     required: true
   backout-plan:
     description: 'Backout plan.'
