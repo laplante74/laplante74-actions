@@ -75,7 +75,8 @@ runs:
               "assignment_group": "Change-Velocity-Group",
               #"assigned_to": "5edf55fd934b6210cd38fde08bba10a0"
               "assigned_to": "Steven LaPlante"
-            }
+            },
+            "displayValue": true
           }
 
     - name: Debug outputs from ServiceNow step
