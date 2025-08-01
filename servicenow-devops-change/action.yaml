@@ -19,13 +19,13 @@ inputs:
     required: true
     default: 'prod-deploy'
   short-description:
-    description:
+    description: 'Short description of the change request.'
     required: true
   description:
-    description:
+    description: 'Detailed description of the change request.'
     required: true
   implementation-plan:
-    description:
+    description: 'Implementation plan for the change request.'
     required: true
   backout-plan:
     description: 'Backout plan.'
@@ -33,14 +33,6 @@ inputs:
   test-plan:
     description: 'Test plan.'
     required: true
-#  risk:
-#    description: 'Risk of the change:  1=Critical, 2=High, 3=Moderate, 4=Low'
-#    required: true
-#    default: '4'
-#  impact:
-#    description: 'Impact of the change:  1=High, 2=Medium, 3=Low'
-#    required: true
-#    default: '3'
   assignment-group:
     description: 'The ServiceNow assignment group sys_id'
     required: true
@@ -68,21 +60,33 @@ runs:
     - name: Generate change-request JSON safely
       shell: bash
       run: |
-        cat <<EOF > change_request.json
-{
-  "setCloseCode": "true",
-  "autoCloseChange": true,
-  "attributes": {
-    "short_description": "$(echo "${{ inputs.short-description }}" | jq -Rsa .)",
-    "description": $(echo "${{ inputs.description }}" | jq -Rs .),
-    "implementation_plan": $(echo "${{ inputs.implementation-plan }}" | jq -Rs .),
-    "backout_plan": $(echo "${{ inputs.backout-plan }}" | jq -Rs .),
-    "test_plan": $(echo "${{ inputs.test-plan }}" | jq -Rs .),
-    "assignment_group": "${{ inputs.assignment-group }}",
-    "assigned_to": "${{ inputs.assigned-to }}"
-  }
-}
-EOF
+        echo "::group::Building JSON"
+        CHANGE_REQUEST_JSON=$(jq -n \
+          --arg short_description "${{ inputs.short-description }}" \
+          --arg description "${{ inputs.description }}" \
+          --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
+          --arg backout_plan "${{ inputs['backout-plan'] }}" \
+          --arg test_plan "${{ inputs['test-plan'] }}" \
+          --arg assignment_group "${{ inputs['assignment-group'] }}" \
+          --arg assigned_to "${{ inputs['assigned-to'] }}" \
+          '{
+            setCloseCode: "true",
+            autoCloseChange: true,
+            attributes: {
+              short_description: $short_description,
+              description: $description,
+              implementation_plan: $implementation_plan,
+              backout_plan: $backout_plan,
+              test_plan: $test_plan,
+              assignment_group: $assignment_group,
+              assigned_to: $assigned_to
+            }
+          }')
+        echo "$CHANGE_REQUEST_JSON" > change_request.json
+        echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
+        echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+        echo "::endgroup::"
 
     - name: Trigger Change Control in ServiceNow
       uses: ServiceNow/servicenow-devops-change@v6.0.0
@@ -94,13 +98,4 @@ EOF
         tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
-        change-request: ${{ steps.build.outputs.escaped_json }}
-
-    - name: Debug outputs from ServiceNow step
-      run: |
-        echo "DEBUG: CR Number => ${{ steps.change_creation.outputs.change_request_number }}"
-        echo "DEBUG: CR Sys ID => ${{ steps.change_creation.outputs.change_request_sys_id }}"
-        echo "DEBUG: CR URL    => ${{ steps.change_creation.outputs.change_request_url }}"
-      shell: bash
-
-
+        change-request: ${{ env.CHANGE_REQUEST_JSON }}
