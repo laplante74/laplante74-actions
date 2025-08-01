@@ -33,6 +33,12 @@ inputs:
   test-plan:
     description: 'Test plan.'
     required: true
+  assignment-group:
+    description: 'The ServiceNow assignment group sys_id'
+    required: true
+  assigned-to:
+    description: 'The ServiceNow user sys_id to CHG is assigned to'
+    required: false
   context-github:
     description: 'GitHub context.'
     required: true
@@ -71,9 +77,8 @@ runs:
               "implementation_plan": "${{ inputs.implementation-plan }}",
               "backout_plan": "${{ inputs.backout-plan }}",
               "test_plan": "${{ inputs.test-plan }}",
-              "assignment_group": "Change-Velocity-Group",
-              "assigned_to": "Steven LaPlante",
-              "displayValue": true
+              "assignment_group": "${{ inputs.assignment-group }}",
+              "assigned_to": "${{ inputs.assigned-to }}"
             }
           }
 
