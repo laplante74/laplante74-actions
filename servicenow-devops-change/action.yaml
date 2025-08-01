@@ -65,6 +65,25 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Generate change-request JSON safely
+      shell: bash
+      run: |
+        cat <<EOF > change_request.json
+{
+  "setCloseCode": "true",
+  "autoCloseChange": true,
+  "attributes": {
+    "short_description": "$(echo "${{ inputs.short-description }}" | jq -Rsa .)",
+    "description": $(echo "${{ inputs.description }}" | jq -Rs .),
+    "implementation_plan": $(echo "${{ inputs.implementation-plan }}" | jq -Rs .),
+    "backout_plan": $(echo "${{ inputs.backout-plan }}" | jq -Rs .),
+    "test_plan": $(echo "${{ inputs.test-plan }}" | jq -Rs .),
+    "assignment_group": "${{ inputs.assignment-group }}",
+    "assigned_to": "${{ inputs.assigned-to }}"
+  }
+}
+EOF
+
     - name: Trigger Change Control in ServiceNow
       uses: ServiceNow/servicenow-devops-change@v6.0.0
       id: change_creation
@@ -75,20 +94,7 @@ runs:
         tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
-        change-request: >-
-          {
-            "setCloseCode": "true",
-            "autoCloseChange": true,
-            "attributes": {
-              "short_description": "${{ inputs.short-description }}",
-              "description": "${{ inputs.description }}",
-              "implementation_plan": "${{ inputs.implementation-plan }}",
-              "backout_plan": "${{ inputs.backout-plan }}",
-              "test_plan": "${{ inputs.test-plan }}",
-              "assignment_group": "${{ inputs.assignment-group }}",
-              "assigned_to": "${{ inputs.assigned-to }}"
-            }
-          }
+        change-request: ${{ steps.build.outputs.escaped_json }}
 
     - name: Debug outputs from ServiceNow step
       run: |
@@ -96,4 +102,5 @@ runs:
         echo "DEBUG: CR Sys ID => ${{ steps.change_creation.outputs.change_request_sys_id }}"
         echo "DEBUG: CR URL    => ${{ steps.change_creation.outputs.change_request_url }}"
       shell: bash
+
 
