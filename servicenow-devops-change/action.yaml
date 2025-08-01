@@ -64,6 +64,11 @@ runs:
       shell: bash
       run: |
         echo "::group::Building JSON"
+
+        # Read values from environment variables
+        actual_start_date="${START}"
+        actual_end_date="${END}"
+        
         CHANGE_REQUEST_JSON=$(jq -n \
           --arg short_description "${{ inputs.short-description }}" \
           --arg description "${{ inputs.description }}" \
@@ -73,9 +78,13 @@ runs:
           --arg assignment_group "${{ inputs['assignment-group'] }}" \
           --arg assigned_to "${{ inputs['assigned-to'] }}" \
           --arg work_notes "${{ inputs['work-notes'] }}" \
+          --arg actual_start_date "$actual_start_date" \
+          --arg actual_end_date "$actual_end_date" \
           '{
             setCloseCode: "true",
-            autoCloseChange: true,
+            autoCloseChange: "true",
+            actual_start_date: $actual_start_date,
+            actual_end_date: $actual_end_date,
             attributes: {
               short_description: $short_description,
               description: $description,
