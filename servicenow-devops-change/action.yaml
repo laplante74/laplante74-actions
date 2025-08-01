@@ -33,11 +33,19 @@ inputs:
   test-plan:
     description: 'Test plan.'
     required: true
+  risk:
+    description: 'Risk of the change:  1=Critical, 2=High, 3=Moderate, 4=Low'
+    required: true
+    default: '4'
+  impact:
+    description: 'Impact of the change:  1=High, 2=Medium, 3=Low'
+    required: true
+    default: '3'
   assignment-group:
     description: 'The ServiceNow assignment group sys_id'
     required: true
   assigned-to:
-    description: 'The ServiceNow user sys_id to CHG is assigned to'
+    description: 'The ServiceNow user sys_id to whom the CHG is assigned'
     required: false
   context-github:
     description: 'GitHub context.'
@@ -77,6 +85,8 @@ runs:
               "implementation_plan": "${{ inputs.implementation-plan }}",
               "backout_plan": "${{ inputs.backout-plan }}",
               "test_plan": "${{ inputs.test-plan }}",
+              "risk": "${{ inputs.risk }}",
+              "impact": "${{ inputs.impact }}",
               "assignment_group": "${{ inputs.assignment-group }}",
               "assigned_to": "${{ inputs.assigned-to }}"
             }
