@@ -76,6 +76,8 @@ runs:
     - name: Create or close ServiceNow Change Request
       shell: bash
       run: |
+        set -e
+
         if [[ "${{ inputs.auto-close }}" == "true" ]]; then
           # Close/update existing change request
           if [[ -z "${{ inputs.change_request_sys_id }}" ]]; then
@@ -107,7 +109,7 @@ runs:
 
           echo "Change request closed."
 
-          # No new outputs since no new change created
+          # Output existing change info
           echo "change_request_number=" >> $GITHUB_OUTPUT
           echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
           echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
@@ -144,18 +146,12 @@ runs:
           echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-          # Call ServiceNow Change Velocity action to create the change
-          # We call it via 'uses' here because composite actions don't allow nested 'uses', so simulate the call:
-          # Instead, use curl here or you could split the composite into reusable workflows for better modularity.
-          # For demo, use curl POST request to create change:
-
           RESPONSE=$(curl -s -X POST \
             "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change" \
             --user "${{ inputs.SN_USERNAME }}:${{ inputs.SN_PASSWORD }}" \
             --header "Content-Type: application/json" \
             --data "${CHANGE_REQUEST_JSON}")
 
-          # Extract sys_id and number from response JSON
           SYS_ID=$(echo "$RESPONSE" | jq -r '.result.sys_id // empty')
           NUMBER=$(echo "$RESPONSE" | jq -r '.result.number // empty')
 
