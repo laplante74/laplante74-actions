@@ -49,13 +49,10 @@ inputs:
 outputs:
   change_request_number:
     description: 'The created Change Request number'
-    value: ${{ steps.change_creation.outputs.change_request_number }}
   change_request_sys_id:
     description: 'The created Change Request sys_id'
-    value: ${{ steps.change_creation.outputs.change_request_sys_id }}
   change_request_url:
     description: 'URL to view the created Change Request'
-    value: ${{ steps.change_creation.outputs.change_request_url }}
 
 runs:
   using: "composite"
@@ -65,7 +62,6 @@ runs:
       run: |
         echo "::group::Building JSON"
 
-        # Read values from environment variables
         actual_start_date="${START}"
         actual_end_date="${END}"
         
@@ -113,3 +109,10 @@ runs:
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
         change-request: ${{ env.CHANGE_REQUEST_JSON }}
+
+    - name: Expose outputs to workflow
+      shell: bash
+      run: |
+        echo "change_request_number=${{ steps.change_creation.outputs.change_request_number }}" >> $GITHUB_OUTPUT
+        echo "change_request_sys_id=${{ steps.change_creation.outputs.change_request_sys_id }}" >> $GITHUB_OUTPUT
+        echo "change_request_url=${{ steps.change_creation.outputs.change_request_url }}" >> $GITHUB_OUTPUT
