@@ -1,5 +1,5 @@
-name: 'Trigger ServiceNow Change Control'
-description: 'Triggers a Change Control in ServiceNow for automated deployments.'
+name: 'Trigger and Close ServiceNow Change Control'
+description: 'Triggers and optionally closes a Change Control in ServiceNow for automated deployments.'
 
 inputs:
   SN_INSTANCE_URL:
@@ -45,6 +45,19 @@ inputs:
   context-github:
     description: 'GitHub context.'
     required: true
+  actual_start_date:
+    description: 'UTC ISO timestamp for when change actually started.'
+    required: false
+  actual_end_date:
+    description: 'UTC ISO timestamp for when change actually ended.'
+    required: false
+  deploy_status:
+    description: 'Deployment status (success/failure).'
+    required: false
+  auto-close:
+    description: 'Whether to auto-close the change after creation.'
+    required: false
+    default: 'false'
 
 outputs:
   change_request_number:
@@ -60,11 +73,6 @@ runs:
     - name: Generate change-request JSON safely
       shell: bash
       run: |
-        echo "::group::Building JSON"
-
-        actual_start_date="${START}"
-        actual_end_date="${END}"
-        
         CHANGE_REQUEST_JSON=$(jq -n \
           --arg short_description "${{ inputs.short-description }}" \
           --arg description "${{ inputs.description }}" \
@@ -74,13 +82,8 @@ runs:
           --arg assignment_group "${{ inputs['assignment-group'] }}" \
           --arg assigned_to "${{ inputs['assigned-to'] }}" \
           --arg work_notes "${{ inputs['work-notes'] }}" \
-          --arg actual_start_date "$actual_start_date" \
-          --arg actual_end_date "$actual_end_date" \
           '{
-            setCloseCode: "true",
             autoCloseChange: "true",
-            actual_start_date: $actual_start_date,
-            actual_end_date: $actual_end_date,
             attributes: {
               short_description: $short_description,
               description: $description,
@@ -96,7 +99,6 @@ runs:
         echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
         echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
-        echo "::endgroup::"
 
     - name: Trigger Change Control in ServiceNow
       uses: ServiceNow/servicenow-devops-change@v6.0.0
@@ -110,9 +112,28 @@ runs:
         job-name: ${{ inputs.job-name }}
         change-request: ${{ env.CHANGE_REQUEST_JSON }}
 
-    - name: Expose outputs to workflow
+    - name: Expose outputs
       shell: bash
       run: |
         echo "change_request_number=${{ steps.change_creation.outputs.change_request_number }}" >> $GITHUB_OUTPUT
         echo "change_request_sys_id=${{ steps.change_creation.outputs.change_request_sys_id }}" >> $GITHUB_OUTPUT
         echo "change_request_url=${{ steps.change_creation.outputs.change_request_url }}" >> $GITHUB_OUTPUT
+
+    - name: Auto-close change
+      if: ${{ inputs.auto-close == 'true' && inputs.actual_start_date != '' && inputs.actual_end_date != '' }}
+      shell: bash
+      run: |
+        SYS_ID="${{ steps.change_creation.outputs.change_request_sys_id }}"
+        echo "Closing change request $SYS_ID in ServiceNow..."
+        curl -s -X PATCH \
+          "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change/${SYS_ID}" \
+          --user "${{ inputs.SN_USERNAME }}:${{ inputs.SN_PASSWORD }}" \
+          --header "Content-Type: application/json" \
+          --data "{
+            \"actual_start_date\": \"${{ inputs.actual_start_date }}\",
+            \"actual_end_date\": \"${{ inputs.actual_end_date }}\",
+            \"close_code\": \"${{ inputs.deploy_status }}\",
+            \"state\": \"${{ inputs.deploy_status }}\" == \"success\" ? \"closed_successful\" : \"closed_incomplete\",
+            \"work_notes\": \"GitHub deployment result: ${{ inputs.deploy_status }}\"
+          }"
+        echo "Change request closed."
