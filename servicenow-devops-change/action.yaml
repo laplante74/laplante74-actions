@@ -84,8 +84,12 @@ runs:
         actual_start_date="${{ inputs.actual_start_date }}"
         actual_end_date="${{ inputs.actual_end_date }}"
         auto_close="${{ inputs.auto_close }}"
+        change_request_sys_id="${{ inputs.change_request_sys_id }}"
 
-        # Prepare JSON, coercing auto_close string to boolean
+        # Convert string 'true'/'false' to JSON boolean
+        auto_close_json=$( [ "$auto_close" = "true" ] && echo true || echo false )
+
+        # Basic attributes
         CHANGE_REQUEST_JSON=$(jq -n \
           --arg short_description "${{ inputs.short-description }}" \
           --arg description "${{ inputs.description }}" \
@@ -97,7 +101,7 @@ runs:
           --arg work_notes "${{ inputs['work-notes'] }}" \
           --arg actual_start_date "$actual_start_date" \
           --arg actual_end_date "$actual_end_date" \
-          --argjson auto_close "$( [ "$auto_close" = "true" ] && echo true || echo false )" \
+          --argjson auto_close "$auto_close_json" \
           '{
             setCloseCode: true,
             autoCloseChange: $auto_close,
@@ -115,10 +119,15 @@ runs:
             }
           }')
 
+        # For debugging
+        echo "Constructed JSON:"
+        echo "$CHANGE_REQUEST_JSON"
+
         echo "$CHANGE_REQUEST_JSON" > change_request.json
         echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
         echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
+
         echo "::endgroup::"
 
     - name: Trigger Change Control in ServiceNow
@@ -133,3 +142,4 @@ runs:
         job-name: ${{ inputs.job-name }}
         change-request: ${{ env.CHANGE_REQUEST_JSON }}
         change-request-sys-id: ${{ inputs.change_request_sys_id || '' }}
+
