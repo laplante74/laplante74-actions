@@ -58,6 +58,9 @@ inputs:
     description: 'Whether to auto-close the change after creation.'
     required: false
     default: 'false'
+  change_request_sys_id:
+    description: 'Sys ID of existing change request to update/close (required if auto-close is true).'
+    required: false
 
 outputs:
   change_request_number:
@@ -70,70 +73,102 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Generate change-request JSON safely
+    - name: Create or close ServiceNow Change Request
       shell: bash
       run: |
-        CHANGE_REQUEST_JSON=$(jq -n \
-          --arg short_description "${{ inputs.short-description }}" \
-          --arg description "${{ inputs.description }}" \
-          --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
-          --arg backout_plan "${{ inputs['backout-plan'] }}" \
-          --arg test_plan "${{ inputs['test-plan'] }}" \
-          --arg assignment_group "${{ inputs['assignment-group'] }}" \
-          --arg assigned_to "${{ inputs['assigned-to'] }}" \
-          --arg work_notes "${{ inputs['work-notes'] }}" \
-          '{
-            autoCloseChange: "true",
-            attributes: {
-              short_description: $short_description,
-              description: $description,
-              implementation_plan: $implementation_plan,
-              backout_plan: $backout_plan,
-              test_plan: $test_plan,
-              assignment_group: $assignment_group,
-              assigned_to: $assigned_to,
-              work_notes: $work_notes
-            }
-          }')
-        echo "$CHANGE_REQUEST_JSON" > change_request.json
-        echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
-        echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+        if [[ "${{ inputs.auto-close }}" == "true" ]]; then
+          # Close/update existing change request
+          if [[ -z "${{ inputs.change_request_sys_id }}" ]]; then
+            echo "ERROR: change_request_sys_id input is required when auto-close is true"
+            exit 1
+          fi
 
-    - name: Trigger Change Control in ServiceNow
-      uses: ServiceNow/servicenow-devops-change@v6.0.0
-      id: change_creation
-      with:
-        instance-url: ${{ inputs.SN_INSTANCE_URL }}
-        devops-integration-user-name: ${{ inputs.SN_USERNAME }}
-        devops-integration-user-password: ${{ inputs.SN_PASSWORD }}
-        tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
-        context-github: ${{ inputs.context-github }}
-        job-name: ${{ inputs.job-name }}
-        change-request: ${{ env.CHANGE_REQUEST_JSON }}
+          SYS_ID="${{ inputs.change_request_sys_id }}"
 
-    - name: Expose outputs
-      shell: bash
-      run: |
-        echo "change_request_number=${{ steps.change_creation.outputs.change_request_number }}" >> $GITHUB_OUTPUT
-        echo "change_request_sys_id=${{ steps.change_creation.outputs.change_request_sys_id }}" >> $GITHUB_OUTPUT
-        echo "change_request_url=${{ steps.change_creation.outputs.change_request_url }}" >> $GITHUB_OUTPUT
+          echo "Closing change request $SYS_ID in ServiceNow..."
 
-    - name: Auto-close change
-      if: ${{ inputs.auto-close == 'true' && inputs.actual_start_date != '' && inputs.actual_end_date != '' }}
-      shell: bash
-      run: |
-        SYS_ID="${{ steps.change_creation.outputs.change_request_sys_id }}"
-        echo "Closing change request $SYS_ID in ServiceNow..."
-        curl -s -X PATCH \
-          "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change/${SYS_ID}" \
-          --user "${{ inputs.SN_USERNAME }}:${{ inputs.SN_PASSWORD }}" \
-          --header "Content-Type: application/json" \
-          --data "{
-            \"actual_start_date\": \"${{ inputs.actual_start_date }}\",
-            \"actual_end_date\": \"${{ inputs.actual_end_date }}\",
-            \"close_code\": \"${{ inputs.deploy_status }}\",
-            \"state\": \"${{ inputs.deploy_status }}\" == \"success\" ? \"closed_successful\" : \"closed_incomplete\",
-            \"work_notes\": \"GitHub deployment result: ${{ inputs.deploy_status }}\"
-          }"
-        echo "Change request closed."
+          if [[ "${{ inputs.deploy_status }}" == "success" ]]; then
+            STATE="closed_successful"
+          else
+            STATE="closed_incomplete"
+          fi
+
+          curl -s -X PATCH \
+            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change/${SYS_ID}" \
+            --user "${{ inputs.SN_USERNAME }}:${{ inputs.SN_PASSWORD }}" \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"actual_start_date\": \"${{ inputs.actual_start_date }}\",
+              \"actual_end_date\": \"${{ inputs.actual_end_date }}\",
+              \"close_code\": \"${{ inputs.deploy_status }}\",
+              \"state\": \"${STATE}\",
+              \"work_notes\": \"GitHub deployment result: ${{ inputs.deploy_status }}\"
+            }"
+
+          echo "Change request closed."
+
+          # No new outputs since no new change created
+          echo "change_request_number=" >> $GITHUB_OUTPUT
+          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+
+        else
+          # Create new change request
+          echo "Creating new change request..."
+
+          CHANGE_REQUEST_JSON=$(jq -n \
+            --arg short_description "${{ inputs.short-description }}" \
+            --arg description "${{ inputs.description }}" \
+            --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
+            --arg backout_plan "${{ inputs['backout-plan'] }}" \
+            --arg test_plan "${{ inputs['test-plan'] }}" \
+            --arg assignment_group "${{ inputs['assignment-group'] }}" \
+            --arg assigned_to "${{ inputs['assigned-to'] }}" \
+            --arg work_notes "${{ inputs['work-notes'] }}" \
+            '{
+              autoCloseChange: "true",
+              attributes: {
+                short_description: $short_description,
+                description: $description,
+                implementation_plan: $implementation_plan,
+                backout_plan: $backout_plan,
+                test_plan: $test_plan,
+                assignment_group: $assignment_group,
+                assigned_to: $assigned_to,
+                work_notes: $work_notes
+              }
+            }')
+
+          echo "$CHANGE_REQUEST_JSON" > change_request.json
+          echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
+          echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+          # Call ServiceNow Change Velocity action to create the change
+          # We call it via 'uses' here because composite actions don't allow nested 'uses', so simulate the call:
+          # Instead, use curl here or you could split the composite into reusable workflows for better modularity.
+          # For demo, use curl POST request to create change:
+
+          RESPONSE=$(curl -s -X POST \
+            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change" \
+            --user "${{ inputs.SN_USERNAME }}:${{ inputs.SN_PASSWORD }}" \
+            --header "Content-Type: application/json" \
+            --data "${CHANGE_REQUEST_JSON}")
+
+          # Extract sys_id and number from response JSON
+          SYS_ID=$(echo "$RESPONSE" | jq -r '.result.sys_id // empty')
+          NUMBER=$(echo "$RESPONSE" | jq -r '.result.number // empty')
+
+          if [[ -z "$SYS_ID" ]]; then
+            echo "Failed to create change request. Response:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Created change request number: $NUMBER with sys_id: $SYS_ID"
+
+          # Set outputs
+          echo "change_request_number=${NUMBER}" >> $GITHUB_OUTPUT
+          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+        fi
