@@ -45,30 +45,47 @@ inputs:
   context-github:
     description: 'GitHub context.'
     required: true
+  actual_start_date:
+    description: 'Actual start date/time of the deployment (ISO 8601).'
+    required: false
+  actual_end_date:
+    description: 'Actual end date/time of the deployment (ISO 8601).'
+    required: false
+  deploy_status:
+    description: 'Deployment status (success, failure, etc.)'
+    required: false
+  change_request_sys_id:
+    description: 'Sys_id of an existing change request (for update)'
+    required: false
+  auto_close:
+    description: 'Whether to auto-close the change request (true/false)'
+    required: false
+    default: 'false'
 
 outputs:
   change_request_number:
-    description: 'The created Change Request number'
+    description: 'The created or updated Change Request number'
     value: ${{ steps.change_creation.outputs.change_request_number }}
   change_request_sys_id:
-    description: 'The created Change Request sys_id'
+    description: 'The created or updated Change Request sys_id'
     value: ${{ steps.change_creation.outputs.change_request_sys_id }}
   change_request_url:
-    description: 'URL to view the created Change Request'
+    description: 'URL to view the created or updated Change Request'
     value: ${{ steps.change_creation.outputs.change_request_url }}
 
 runs:
   using: "composite"
   steps:
-    - name: Generate change-request JSON safely
+    - name: Build change-request JSON
       shell: bash
       run: |
         echo "::group::Building JSON"
 
-        # Read values from environment variables
-        actual_start_date="${START}"
-        actual_end_date="${END}"
-        
+        actual_start_date="${{ inputs.actual_start_date }}"
+        actual_end_date="${{ inputs.actual_end_date }}"
+        auto_close="${{ inputs.auto_close }}"
+
+        # Prepare JSON, coercing auto_close string to boolean
         CHANGE_REQUEST_JSON=$(jq -n \
           --arg short_description "${{ inputs.short-description }}" \
           --arg description "${{ inputs.description }}" \
@@ -80,9 +97,10 @@ runs:
           --arg work_notes "${{ inputs['work-notes'] }}" \
           --arg actual_start_date "$actual_start_date" \
           --arg actual_end_date "$actual_end_date" \
+          --argjson auto_close "$( [ "$auto_close" = "true" ] && echo true || echo false )" \
           '{
-            setCloseCode: "true",
-            autoCloseChange: "true",
+            setCloseCode: true,
+            autoCloseChange: $auto_close,
             actual_start_date: $actual_start_date,
             actual_end_date: $actual_end_date,
             attributes: {
@@ -96,6 +114,7 @@ runs:
               work_notes: $work_notes
             }
           }')
+
         echo "$CHANGE_REQUEST_JSON" > change_request.json
         echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
         echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
@@ -103,8 +122,8 @@ runs:
         echo "::endgroup::"
 
     - name: Trigger Change Control in ServiceNow
-      uses: ServiceNow/servicenow-devops-change@v6.0.0
       id: change_creation
+      uses: ServiceNow/servicenow-devops-change@v6.0.0
       with:
         instance-url: ${{ inputs.SN_INSTANCE_URL }}
         devops-integration-user-name: ${{ inputs.SN_USERNAME }}
@@ -113,3 +132,4 @@ runs:
         context-github: ${{ inputs.context-github }}
         job-name: ${{ inputs.job-name }}
         change-request: ${{ env.CHANGE_REQUEST_JSON }}
+        change-request-sys-id: ${{ inputs.change_request_sys_id || '' }}
