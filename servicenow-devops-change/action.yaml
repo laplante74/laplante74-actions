@@ -1,145 +1,152 @@
-name: 'Trigger ServiceNow Change Control'
-description: 'Triggers a Change Control in ServiceNow for automated deployments.'
+name: 'ServiceNow Change Control (Create/Close via Token)'
+description: 'Create and optionally close a ServiceNow Change using DevOps API with token auth.'
 
 inputs:
   SN_INSTANCE_URL:
-    description: 'ServiceNow instance URL.'
-    required: true
-  SN_USERNAME:
-    description: 'ServiceNow DevOps integration username.'
-    required: true
-  SN_PASSWORD:
-    description: 'ServiceNow DevOps integration password.'
     required: true
   SN_ORCHESTRATION_TOOL_ID:
-    description: 'ServiceNow Orchestration Tool ID.'
     required: true
+
   job-name:
-    description: 'The name of the GitHub job triggering the change.'
     required: true
     default: 'prod-deploy'
+
   short-description:
-    description: 'Short description of the change request.'
     required: true
   description:
-    description: 'Detailed description of the change request.'
     required: true
   implementation-plan:
-    description: 'Implementation plan for the change request.'
     required: true
   backout-plan:
-    description: 'Backout plan.'
     required: true
   test-plan:
-    description: 'Test plan.'
     required: true
+
   assignment-group:
-    description: 'The ServiceNow assignment group sys_id'
     required: true
   assigned-to:
-    description: 'The ServiceNow user sys_id to whom the CHG is assigned'
     required: false
+
   work-notes:
-    description: 'The status of the actual GitHub deployment'
     required: false
   context-github:
-    description: 'GitHub context.'
     required: true
+
   actual_start_date:
-    description: 'Actual start date/time of the deployment (ISO 8601).'
     required: false
   actual_end_date:
-    description: 'Actual end date/time of the deployment (ISO 8601).'
     required: false
   deploy_status:
-    description: 'Deployment status (success, failure, etc.)'
     required: false
-  change_request_sys_id:
-    description: 'Sys_id of an existing change request (for update)'
-    required: false
+
   auto_close:
-    description: 'Whether to auto-close the change request (true/false)'
     required: false
     default: 'false'
 
+  change_request_sys_id:
+    required: false
+
 outputs:
   change_request_number:
-    description: 'The created or updated Change Request number'
-    value: ${{ steps.change_creation.outputs.change_request_number }}
+    value: ${{ steps.sn.outputs.change_request_number }}
   change_request_sys_id:
-    description: 'The created or updated Change Request sys_id'
-    value: ${{ steps.change_creation.outputs.change_request_sys_id }}
+    value: ${{ steps.sn.outputs.change_request_sys_id }}
   change_request_url:
-    description: 'URL to view the created or updated Change Request'
-    value: ${{ steps.change_creation.outputs.change_request_url }}
+    value: ${{ steps.sn.outputs.change_request_url }}
 
 runs:
   using: "composite"
   steps:
-    - name: Build change-request JSON
+    - id: sn
       shell: bash
       run: |
-        echo "::group::Building JSON"
+        set -e
 
-        actual_start_date="${{ inputs.actual_start_date }}"
-        actual_end_date="${{ inputs.actual_end_date }}"
-        auto_close="${{ inputs.auto_close }}"
-        change_request_sys_id="${{ inputs.change_request_sys_id }}"
+        if [[ -z "$SN_DEVOPS_INTEGRATION_TOKEN" ]]; then
+          echo "ERROR: SN_DEVOPS_INTEGRATION_TOKEN is not set"
+          exit 1
+        fi
 
-        # Convert string 'true'/'false' to JSON boolean
-        auto_close_json=$( [ "$auto_close" = "true" ] && echo true || echo false )
+        AUTH_HEADER="Authorization: Bearer $SN_DEVOPS_INTEGRATION_TOKEN"
 
-        # Basic attributes
-        CHANGE_REQUEST_JSON=$(jq -n \
-          --arg short_description "${{ inputs.short-description }}" \
-          --arg description "${{ inputs.description }}" \
-          --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
-          --arg backout_plan "${{ inputs['backout-plan'] }}" \
-          --arg test_plan "${{ inputs['test-plan'] }}" \
-          --arg assignment_group "${{ inputs['assignment-group'] }}" \
-          --arg assigned_to "${{ inputs['assigned-to'] }}" \
-          --arg work_notes "${{ inputs['work-notes'] }}" \
-          --arg actual_start_date "$actual_start_date" \
-          --arg actual_end_date "$actual_end_date" \
-          --argjson auto_close "$auto_close_json" \
-          '{
-            setCloseCode: true,
-            autoCloseChange: $auto_close,
-            actual_start_date: $actual_start_date,
-            actual_end_date: $actual_end_date,
-            attributes: {
-              short_description: $short_description,
-              description: $description,
-              implementation_plan: $implementation_plan,
-              backout_plan: $backout_plan,
-              test_plan: $test_plan,
-              assignment_group: $assignment_group,
-              assigned_to: $assigned_to,
-              work_notes: $work_notes
-            }
-          }')
+        if [[ "${{ inputs.auto_close }}" == "true" ]]; then
 
-        # For debugging
-        echo "Constructed JSON:"
-        echo "$CHANGE_REQUEST_JSON"
+          if [[ -z "${{ inputs.change_request_sys_id }}" ]]; then
+            echo "ERROR: change_request_sys_id required for close"
+            exit 1
+          fi
 
-        echo "$CHANGE_REQUEST_JSON" > change_request.json
-        echo "CHANGE_REQUEST_JSON<<EOF" >> $GITHUB_ENV
-        echo "$CHANGE_REQUEST_JSON" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+          SYS_ID="${{ inputs.change_request_sys_id }}"
 
-        echo "::endgroup::"
+          echo "Closing change request: $SYS_ID"
 
-    - name: Trigger Change Control in ServiceNow
-      id: change_creation
-      uses: ServiceNow/servicenow-devops-change@v6.0.0
-      with:
-        instance-url: ${{ inputs.SN_INSTANCE_URL }}
-        devops-integration-user-name: ${{ inputs.SN_USERNAME }}
-        devops-integration-user-password: ${{ inputs.SN_PASSWORD }}
-        tool-id: ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
-        context-github: ${{ inputs.context-github }}
-        job-name: ${{ inputs.job-name }}
-        change-request: ${{ env.CHANGE_REQUEST_JSON }}
-        change-request-sys-id: ${{ inputs.change_request_sys_id || '' }}
+          if [[ "${{ inputs.deploy_status }}" == "success" ]]; then
+            STATE="closed_successful"
+          else
+            STATE="closed_incomplete"
+          fi
 
+          curl -s -X PATCH \
+            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change/${SYS_ID}" \
+            -H "$AUTH_HEADER" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"actual_start_date\": \"${{ inputs.actual_start_date }}\",
+              \"actual_end_date\": \"${{ inputs.actual_end_date }}\",
+              \"close_code\": \"${{ inputs.deploy_status }}\",
+              \"state\": \"${STATE}\",
+              \"work_notes\": \"Deployment result: ${{ inputs.deploy_status }}\"
+            }"
+
+          echo "change_request_number=" >> $GITHUB_OUTPUT
+          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+
+        else
+
+          echo "Creating change request..."
+
+          CHANGE_JSON=$(jq -n \
+            --arg short_description "${{ inputs.short-description }}" \
+            --arg description "${{ inputs.description }}" \
+            --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
+            --arg backout_plan "${{ inputs['backout-plan'] }}" \
+            --arg test_plan "${{ inputs['test-plan'] }}" \
+            --arg assignment_group "${{ inputs['assignment-group'] }}" \
+            --arg assigned_to "${{ inputs['assigned-to'] }}" \
+            --arg work_notes "${{ inputs['work-notes'] }}" \
+            '{
+              autoCloseChange: false,
+              attributes: {
+                short_description: $short_description,
+                description: $description,
+                implementation_plan: $implementation_plan,
+                backout_plan: $backout_plan,
+                test_plan: $test_plan,
+                assignment_group: $assignment_group,
+                assigned_to: $assigned_to,
+                work_notes: $work_notes
+              }
+            }')
+
+          RESPONSE=$(curl -s -X POST \
+            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change" \
+            -H "$AUTH_HEADER" \
+            -H "Content-Type: application/json" \
+            -d "$CHANGE_JSON")
+
+          SYS_ID=$(echo "$RESPONSE" | jq -r '.result.sys_id // empty')
+          NUMBER=$(echo "$RESPONSE" | jq -r '.result.number // empty')
+
+          if [[ -z "$SYS_ID" ]]; then
+            echo "ERROR creating change"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Created change: $NUMBER"
+
+          echo "change_request_number=${NUMBER}" >> $GITHUB_OUTPUT
+          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+        fi
