@@ -6,6 +6,9 @@ inputs:
     required: true
   SN_ORCHESTRATION_TOOL_ID:
     required: true
+  SN_DEVOPS_INTEGRATION_TOKEN:
+    description: 'ServiceNow DevOps token'
+    required: true
 
   job-name:
     required: true
@@ -59,6 +62,8 @@ runs:
   steps:
     - id: sn
       shell: bash
+      env:
+        SN_DEVOPS_INTEGRATION_TOKEN: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
       run: |
         set -e
 
