@@ -1,157 +1,122 @@
-name: 'ServiceNow Change Control (Create/Close via Token)'
-description: 'Create and optionally close a ServiceNow Change using DevOps API with token auth.'
-
+name: 'ServiceNow DevOps Change (Create or Close)'
+description: >
+  Creates or closes a ServiceNow Change Request via the DevOps Change API.
+  Pass auto_close: 'false' to create. Pass auto_close: 'true' + change_request_sys_id to close.
 inputs:
+  # ── Connection ────────────────────────────────────────────────────────────
   SN_INSTANCE_URL:
+    description: 'Full URL of your ServiceNow instance, no trailing slash.'
     required: true
   SN_ORCHESTRATION_TOOL_ID:
+    description: 'sys_id of the GitHub orchestration tool record in ServiceNow.'
     required: true
   SN_DEVOPS_INTEGRATION_TOKEN:
-    description: 'ServiceNow DevOps token'
+    description: 'DevOps Integration Token from the orchestration tool record.'
     required: true
-
+  # ── Change fields ─────────────────────────────────────────────────────────
   job-name:
+    description: 'GitHub job name — used to correlate the change to a pipeline run.'
     required: true
-    default: 'prod-deploy'
-
   short-description:
+    description: 'Short description for the change request.'
     required: true
   description:
+    description: 'Detailed description.'
     required: true
   implementation-plan:
+    description: 'How the change will be implemented.'
     required: true
   backout-plan:
+    description: 'How to roll back if something goes wrong.'
     required: true
   test-plan:
+    description: 'How the change has been / will be validated.'
     required: true
-
   assignment-group:
+    description: 'sys_id of the assignment group.'
     required: true
   assigned-to:
+    description: 'sys_id of the person assigned to the change (optional).'
     required: false
-
+    default: ''
   work-notes:
+    description: 'Work notes to add when creating or closing the change.'
     required: false
-  context-github:
-    required: true
-
-  actual_start_date:
-    required: false
-  actual_end_date:
-    required: false
-  deploy_status:
-    required: false
-
+    default: ''
+  # ── Close-only fields ─────────────────────────────────────────────────────
   auto_close:
+    description: "'true' to close an existing change; 'false' (default) to create one."
     required: false
     default: 'false'
-
   change_request_sys_id:
+    description: 'sys_id of the change to close. Required when auto_close is true.'
     required: false
-
+    default: ''
+  actual_start_date:
+    description: 'ISO-8601 UTC start time of the deployment (for close only).'
+    required: false
+    default: ''
+  actual_end_date:
+    description: 'ISO-8601 UTC end time of the deployment (for close only).'
+    required: false
+    default: ''
+  deploy_status:
+    description: "'success' or anything else maps to closed_successful / closed_incomplete."
+    required: false
+    default: ''
 outputs:
   change_request_number:
-    value: ${{ steps.sn.outputs.change_request_number }}
+    description: 'Human-readable change number, e.g. CHG0012345.'
+    value: ${{ steps.sn-change.outputs.change_request_number }}
   change_request_sys_id:
-    value: ${{ steps.sn.outputs.change_request_sys_id }}
+    description: 'sys_id of the created or closed change request.'
+    value: ${{ steps.sn-change.outputs.change_request_sys_id }}
   change_request_url:
-    value: ${{ steps.sn.outputs.change_request_url }}
-
+    description: 'Direct URL to the change request record in ServiceNow.'
+    value: ${{ steps.sn-change.outputs.change_request_url }}
 runs:
   using: "composite"
   steps:
-    - id: sn
+    - name: Validate required inputs
       shell: bash
-      env:
-        SN_DEVOPS_INTEGRATION_TOKEN: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
       run: |
-        set -e
-
-        if [[ -z "$SN_DEVOPS_INTEGRATION_TOKEN" ]]; then
-          echo "ERROR: SN_DEVOPS_INTEGRATION_TOKEN is not set"
+        if [[ -z "${{ inputs.SN_INSTANCE_URL }}" ]]; then
+          echo "::error::SN_INSTANCE_URL is required but was not provided."
           exit 1
         fi
-
-        AUTH_HEADER="Authorization: Bearer $SN_DEVOPS_INTEGRATION_TOKEN"
-
-        if [[ "${{ inputs.auto_close }}" == "true" ]]; then
-
-          if [[ -z "${{ inputs.change_request_sys_id }}" ]]; then
-            echo "ERROR: change_request_sys_id required for close"
-            exit 1
-          fi
-
-          SYS_ID="${{ inputs.change_request_sys_id }}"
-
-          echo "Closing change request: $SYS_ID"
-
-          if [[ "${{ inputs.deploy_status }}" == "success" ]]; then
-            STATE="closed_successful"
-          else
-            STATE="closed_incomplete"
-          fi
-
-          curl -s -X PATCH \
-            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change/${SYS_ID}" \
-            -H "$AUTH_HEADER" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"actual_start_date\": \"${{ inputs.actual_start_date }}\",
-              \"actual_end_date\": \"${{ inputs.actual_end_date }}\",
-              \"close_code\": \"${{ inputs.deploy_status }}\",
-              \"state\": \"${STATE}\",
-              \"work_notes\": \"Deployment result: ${{ inputs.deploy_status }}\"
-            }"
-
-          echo "change_request_number=" >> $GITHUB_OUTPUT
-          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
-          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
-
-        else
-
-          echo "Creating change request..."
-
-          CHANGE_JSON=$(jq -n \
-            --arg short_description "${{ inputs.short-description }}" \
-            --arg description "${{ inputs.description }}" \
-            --arg implementation_plan "${{ inputs['implementation-plan'] }}" \
-            --arg backout_plan "${{ inputs['backout-plan'] }}" \
-            --arg test_plan "${{ inputs['test-plan'] }}" \
-            --arg assignment_group "${{ inputs['assignment-group'] }}" \
-            --arg assigned_to "${{ inputs['assigned-to'] }}" \
-            --arg work_notes "${{ inputs['work-notes'] }}" \
-            '{
-              autoCloseChange: false,
-              attributes: {
-                short_description: $short_description,
-                description: $description,
-                implementation_plan: $implementation_plan,
-                backout_plan: $backout_plan,
-                test_plan: $test_plan,
-                assignment_group: $assignment_group,
-                assigned_to: $assigned_to,
-                work_notes: $work_notes
-              }
-            }')
-
-          RESPONSE=$(curl -s -X POST \
-            "${{ inputs.SN_INSTANCE_URL }}/api/sn_devops/devops/change" \
-            -H "$AUTH_HEADER" \
-            -H "Content-Type: application/json" \
-            -d "$CHANGE_JSON")
-
-          SYS_ID=$(echo "$RESPONSE" | jq -r '.result.sys_id // empty')
-          NUMBER=$(echo "$RESPONSE" | jq -r '.result.number // empty')
-
-          if [[ -z "$SYS_ID" ]]; then
-            echo "ERROR creating change"
-            echo "$RESPONSE"
-            exit 1
-          fi
-
-          echo "Created change: $NUMBER"
-
-          echo "change_request_number=${NUMBER}" >> $GITHUB_OUTPUT
-          echo "change_request_sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
-          echo "change_request_url=${{ inputs.SN_INSTANCE_URL }}/change_request.do?sys_id=${SYS_ID}" >> $GITHUB_OUTPUT
+        if [[ -z "${{ inputs.SN_ORCHESTRATION_TOOL_ID }}" ]]; then
+          echo "::error::SN_ORCHESTRATION_TOOL_ID is required but was not provided."
+          exit 1
         fi
+        if [[ -z "${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}" ]]; then
+          echo "::error::SN_DEVOPS_INTEGRATION_TOKEN is required but was not provided."
+          exit 1
+        fi
+        if [[ "${{ inputs.auto_close }}" == "true" && -z "${{ inputs.change_request_sys_id }}" ]]; then
+          echo "::error::change_request_sys_id is required when auto_close is 'true'."
+          exit 1
+        fi
+    - name: Create or close ServiceNow change
+      id: sn-change
+      shell: bash
+      env:
+        # Passing the token through env keeps it out of shell history
+        # and out of 'set -x' trace output.
+        SN_TOKEN:        ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        SN_URL:          ${{ inputs.SN_INSTANCE_URL }}
+        SN_TOOL_ID:      ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
+        AUTO_CLOSE:      ${{ inputs.auto_close }}
+        SYS_ID_IN:       ${{ inputs.change_request_sys_id }}
+        DEPLOY_STATUS:   ${{ inputs.deploy_status }}
+        ACTUAL_START:    ${{ inputs.actual_start_date }}
+        ACTUAL_END:      ${{ inputs.actual_end_date }}
+        SHORT_DESC:      ${{ inputs.short-description }}
+        DESCRIPTION:     ${{ inputs.description }}
+        IMPL_PLAN:       ${{ inputs['implementation-plan'] }}
+        BACKOUT_PLAN:    ${{ inputs['backout-plan'] }}
+        TEST_PLAN:       ${{ inputs['test-plan'] }}
+        ASSIGN_GROUP:    ${{ inputs['assignment-group'] }}
+        ASSIGNED_TO:     ${{ inputs['assigned-to'] }}
+        WORK_NOTES:      ${{ inputs['work-notes'] }}
+      run: |
+        bash "${{ github.action_path }}/../scripts/sn-change.sh"
