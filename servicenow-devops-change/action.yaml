@@ -85,35 +85,47 @@ runs:
   using: "composite"
   steps:
 
-    - name: Build change-request JSON
+    - name: Build change-request JSON and close if needed
       id: build-json
       shell: bash
+      env:
+        SN_TOKEN: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        SN_URL:   ${{ inputs.SN_INSTANCE_URL }}
+        SN_TOOL:  ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
       run: |
         if [[ "${{ inputs.auto_close }}" == "true" ]]; then
           if [[ "${{ inputs.deploy_status }}" == "success" ]]; then
-            STATE="closed_successful"
+            STATE="3"
             CLOSE_CODE="successful"
           else
-            STATE="closed_incomplete"
+            STATE="3"
             CLOSE_CODE="unsuccessful"
           fi
-          JSON=$(jq -cn \
-            --arg sys_id      "${{ inputs.change_request_sys_id }}" \
-            --arg state       "${STATE}" \
-            --arg close_code  "${CLOSE_CODE}" \
-            --arg start       "${{ inputs.actual_start_date }}" \
-            --arg end         "${{ inputs.actual_end_date }}" \
-            --arg notes       "${{ inputs.work-notes }}" \
-            '{
-              attributes: {
-                sys_id:            $sys_id,
-                state:             $state,
-                close_code:        $close_code,
-                actual_start_date: $start,
-                actual_end_date:   $end,
-                work_notes:        $notes
-              }
-            }')
+          SYS_ID="${{ inputs.change_request_sys_id }}"
+          echo "Closing change request: ${SYS_ID}"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
+            "${SN_URL}/api/now/table/change_request/${SYS_ID}" \
+            -H "Content-Type: application/json" \
+            -H "devops-integration-token: ${SN_TOKEN}" \
+            -H "tool-id: ${SN_TOOL}" \
+            -d "$(jq -cn \
+              --arg state      "${STATE}" \
+              --arg close_code "${CLOSE_CODE}" \
+              --arg close_notes "${{ inputs.work-notes }}" \
+              '{
+                state:       $state,
+                close_code:  $close_code,
+                close_notes: $close_notes
+              }')")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "HTTP status: ${HTTP_CODE}"
+          echo "Response: ${BODY}"
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "::error::Failed to close change. HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+          echo "change_request_sys_id=${{ inputs.change_request_sys_id }}" >> "$GITHUB_OUTPUT"
         else
           JSON=$(jq -cn \
             --arg short   "${{ inputs.short-description }}" \
@@ -136,11 +148,12 @@ runs:
                 work_notes:          $notes
               }
             }')
+          echo "change_json=${JSON}" >> "$GITHUB_OUTPUT"
         fi
-        echo "change_json=${JSON}" >> "$GITHUB_OUTPUT"
 
-    - name: Call ServiceNow DevOps change action
+    - name: Call ServiceNow DevOps change action (create only)
       id: sn-official
+      if: inputs.auto_close == 'false'
       uses: ServiceNow/servicenow-devops-change@v5.1.0
       with:
         devops-integration-token: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
