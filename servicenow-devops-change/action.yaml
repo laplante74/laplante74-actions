@@ -1,9 +1,12 @@
 name: 'ServiceNow DevOps Change (Create or Close)'
 description: >
-  Creates or closes a ServiceNow Change Request via the DevOps Change API.
-  Pass auto_close: 'false' to create. Pass auto_close: 'true' + change_request_sys_id to close.
+  Wrapper around the official ServiceNow DevOps change action.
+  Teams pass simple fields — this action handles context, tool-id,
+  and change-request JSON construction internally.
+
 inputs:
-  # ── Connection ────────────────────────────────────────────────────────────
+
+  # ── Connection ─────────────────────────────────────────────────────────
   SN_INSTANCE_URL:
     description: 'Full URL of your ServiceNow instance, no trailing slash.'
     required: true
@@ -13,9 +16,10 @@ inputs:
   SN_DEVOPS_INTEGRATION_TOKEN:
     description: 'DevOps Integration Token from the orchestration tool record.'
     required: true
-  # ── Change fields ─────────────────────────────────────────────────────────
+
+  # ── Change fields ───────────────────────────────────────────────────────
   job-name:
-    description: 'GitHub job name — used to correlate the change to a pipeline run.'
+    description: 'Must match the exact GitHub job name this step runs in.'
     required: true
   short-description:
     description: 'Short description for the change request.'
@@ -30,22 +34,26 @@ inputs:
     description: 'How to roll back if something goes wrong.'
     required: true
   test-plan:
-    description: 'How the change has been / will be validated.'
+    description: 'How the change has been validated.'
     required: true
   assignment-group:
     description: 'sys_id of the assignment group.'
     required: true
   assigned-to:
-    description: 'sys_id of the person assigned to the change (optional).'
+    description: 'sys_id of the assigned person (optional).'
     required: false
     default: ''
   work-notes:
-    description: 'Work notes to add when creating or closing the change.'
+    description: 'Work notes to add to the change.'
     required: false
     default: ''
-  # ── Close-only fields ─────────────────────────────────────────────────────
+  context-github:
+    description: 'Pass toJSON(github) from your workflow.'
+    required: true
+
+  # ── Close-only fields ───────────────────────────────────────────────────
   auto_close:
-    description: "'true' to close an existing change; 'false' (default) to create one."
+    description: "'true' to close an existing change, 'false' to create one."
     required: false
     default: 'false'
   change_request_sys_id:
@@ -53,70 +61,91 @@ inputs:
     required: false
     default: ''
   actual_start_date:
-    description: 'ISO-8601 UTC start time of the deployment (for close only).'
+    description: 'ISO-8601 UTC deployment start time (close only).'
     required: false
     default: ''
   actual_end_date:
-    description: 'ISO-8601 UTC end time of the deployment (for close only).'
+    description: 'ISO-8601 UTC deployment end time (close only).'
     required: false
     default: ''
   deploy_status:
-    description: "'success' or anything else maps to closed_successful / closed_incomplete."
+    description: "'success' or anything else (close only)."
     required: false
     default: ''
+
 outputs:
   change_request_number:
-    description: 'Human-readable change number, e.g. CHG0012345.'
-    value: ${{ steps.sn-change.outputs.change_request_number }}
+    description: 'Human-readable change number e.g. CHG0012345.'
+    value: ${{ steps.sn-official.outputs.change-request-number }}
   change_request_sys_id:
     description: 'sys_id of the created or closed change request.'
-    value: ${{ steps.sn-change.outputs.change_request_sys_id }}
-  change_request_url:
-    description: 'Direct URL to the change request record in ServiceNow.'
-    value: ${{ steps.sn-change.outputs.change_request_url }}
+    value: ${{ steps.sn-official.outputs.change-request-sys-id }}
+
 runs:
   using: "composite"
   steps:
-    - name: Validate required inputs
+
+    - name: Build change-request JSON
+      id: build-json
       shell: bash
       run: |
-        if [[ -z "${{ inputs.SN_INSTANCE_URL }}" ]]; then
-          echo "::error::SN_INSTANCE_URL is required but was not provided."
-          exit 1
+        if [[ "${{ inputs.auto_close }}" == "true" ]]; then
+          if [[ "${{ inputs.deploy_status }}" == "success" ]]; then
+            STATE="closed_successful"
+            CLOSE_CODE="successful"
+          else
+            STATE="closed_incomplete"
+            CLOSE_CODE="unsuccessful"
+          fi
+          JSON=$(jq -n \
+            --arg sys_id      "${{ inputs.change_request_sys_id }}" \
+            --arg state       "${STATE}" \
+            --arg close_code  "${CLOSE_CODE}" \
+            --arg start       "${{ inputs.actual_start_date }}" \
+            --arg end         "${{ inputs.actual_end_date }}" \
+            --arg notes       "${{ inputs.work-notes }}" \
+            '{
+              attributes: {
+                sys_id:            $sys_id,
+                state:             $state,
+                close_code:        $close_code,
+                actual_start_date: $start,
+                actual_end_date:   $end,
+                work_notes:        $notes
+              }
+            }')
+        else
+          JSON=$(jq -n \
+            --arg short   "${{ inputs.short-description }}" \
+            --arg desc    "${{ inputs.description }}" \
+            --arg impl    "${{ inputs.implementation-plan }}" \
+            --arg back    "${{ inputs.backout-plan }}" \
+            --arg test    "${{ inputs.test-plan }}" \
+            --arg group   "${{ inputs.assignment-group }}" \
+            --arg person  "${{ inputs.assigned-to }}" \
+            --arg notes   "${{ inputs.work-notes }}" \
+            '{
+              attributes: {
+                short_description:   $short,
+                description:         $desc,
+                implementation_plan: $impl,
+                backout_plan:        $back,
+                test_plan:           $test,
+                assignment_group:    $group,
+                assigned_to:         $person,
+                work_notes:          $notes
+              }
+            }')
         fi
-        if [[ -z "${{ inputs.SN_ORCHESTRATION_TOOL_ID }}" ]]; then
-          echo "::error::SN_ORCHESTRATION_TOOL_ID is required but was not provided."
-          exit 1
-        fi
-        if [[ -z "${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}" ]]; then
-          echo "::error::SN_DEVOPS_INTEGRATION_TOKEN is required but was not provided."
-          exit 1
-        fi
-        if [[ "${{ inputs.auto_close }}" == "true" && -z "${{ inputs.change_request_sys_id }}" ]]; then
-          echo "::error::change_request_sys_id is required when auto_close is 'true'."
-          exit 1
-        fi
-    - name: Create or close ServiceNow change
-      id: sn-change
-      shell: bash
-      env:
-        # Passing the token through env keeps it out of shell history
-        # and out of 'set -x' trace output.
-        SN_TOKEN:        ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
-        SN_URL:          ${{ inputs.SN_INSTANCE_URL }}
-        SN_TOOL_ID:      ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
-        AUTO_CLOSE:      ${{ inputs.auto_close }}
-        SYS_ID_IN:       ${{ inputs.change_request_sys_id }}
-        DEPLOY_STATUS:   ${{ inputs.deploy_status }}
-        ACTUAL_START:    ${{ inputs.actual_start_date }}
-        ACTUAL_END:      ${{ inputs.actual_end_date }}
-        SHORT_DESC:      ${{ inputs.short-description }}
-        DESCRIPTION:     ${{ inputs.description }}
-        IMPL_PLAN:       ${{ inputs['implementation-plan'] }}
-        BACKOUT_PLAN:    ${{ inputs['backout-plan'] }}
-        TEST_PLAN:       ${{ inputs['test-plan'] }}
-        ASSIGN_GROUP:    ${{ inputs['assignment-group'] }}
-        ASSIGNED_TO:     ${{ inputs['assigned-to'] }}
-        WORK_NOTES:      ${{ inputs['work-notes'] }}
-      run: |
-        bash "${{ github.action_path }}/../scripts/sn-change.sh"
+        echo "change_json=${JSON}" >> "$GITHUB_OUTPUT"
+
+    - name: Call ServiceNow DevOps change action
+      id: sn-official
+      uses: ServiceNow/servicenow-devops-change@v5.1.0
+      with:
+        devops-integration-token: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        instance-url:             ${{ inputs.SN_INSTANCE_URL }}
+        tool-id:                  ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
+        context-github:           ${{ inputs.context-github }}
+        job-name:                 ${{ inputs.job-name }}
+        change-request:           ${{ steps.build-json.outputs.change_json }}
