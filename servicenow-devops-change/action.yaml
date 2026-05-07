@@ -97,7 +97,7 @@ runs:
             STATE="closed_incomplete"
             CLOSE_CODE="unsuccessful"
           fi
-          JSON=$(jq -n \
+          JSON=$(jq -cn \
             --arg sys_id      "${{ inputs.change_request_sys_id }}" \
             --arg state       "${STATE}" \
             --arg close_code  "${CLOSE_CODE}" \
@@ -115,7 +115,7 @@ runs:
               }
             }')
         else
-          JSON=$(jq -n \
+          JSON=$(jq -cn \
             --arg short   "${{ inputs.short-description }}" \
             --arg desc    "${{ inputs.description }}" \
             --arg impl    "${{ inputs.implementation-plan }}" \
