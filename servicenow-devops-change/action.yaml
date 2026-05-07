@@ -16,6 +16,10 @@ inputs:
   SN_DEVOPS_INTEGRATION_TOKEN:
     description: 'DevOps Integration Token from the orchestration tool record.'
     required: true
+  change_request_number:
+    description: 'Change number e.g. CHG0030001. Required when auto_close is true.'
+    required: false
+    default: ''
 
   # ── Change fields ───────────────────────────────────────────────────────
   job-name:
@@ -104,19 +108,19 @@ runs:
           SYS_ID="${{ inputs.change_request_sys_id }}"
           echo "Closing change request: ${SYS_ID}"
           RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
-            "${SN_URL}/api/now/table/change_request/${SYS_ID}" \
+            "${SN_URL}/api/sn_devops/devops/change/request?changeRequestNumber=${{ inputs.change_request_number }}" \
             -H "Content-Type: application/json" \
             -H "devops-integration-token: ${SN_TOKEN}" \
             -H "tool-id: ${SN_TOOL}" \
             -d "$(jq -cn \
-              --arg state      "${STATE}" \
+             --arg state      "${STATE}" \
               --arg close_code "${CLOSE_CODE}" \
               --arg close_notes "${{ inputs.work-notes }}" \
               '{
                 state:       $state,
                 close_code:  $close_code,
                 close_notes: $close_notes
-              }')")
+              }')")  
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
           echo "HTTP status: ${HTTP_CODE}"
