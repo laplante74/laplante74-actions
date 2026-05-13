@@ -16,6 +16,12 @@ inputs:
   SN_DEVOPS_INTEGRATION_TOKEN:
     description: 'DevOps Integration Token from the orchestration tool record.'
     required: true
+  SN_OAUTH_CLIENT_ID:
+    description: 'OAuth client ID from ServiceNow Application Registry.'
+    required: true
+  SN_OAUTH_CLIENT_SECRET:
+    description: 'OAuth client secret from ServiceNow Application Registry.'
+    required: true
   change_request_number:
     description: 'Change number e.g. CHG0030001. Required when auto_close is true.'
     required: false
@@ -89,11 +95,36 @@ runs:
   using: "composite"
   steps:
 
+    - name: Fetch OAuth token
+      id: get-token
+      shell: bash
+      env:
+        SN_URL:        ${{ inputs.SN_INSTANCE_URL }}
+        CLIENT_ID:     ${{ inputs.SN_OAUTH_CLIENT_ID }}
+        CLIENT_SECRET: ${{ inputs.SN_OAUTH_CLIENT_SECRET }}
+      run: |
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+          "${SN_URL}/oauth_token.do" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=client_credentials&client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}")
+
+        HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+        BODY=$(echo "$RESPONSE" | head -1)
+
+        if [[ "$HTTP_CODE" != "200" ]]; then
+          echo "::error::Failed to get OAuth token. HTTP ${HTTP_CODE}: ${BODY}"
+          exit 1
+        fi
+
+        TOKEN=$(echo "$BODY" | jq -r '.access_token')
+        echo "::add-mask::${TOKEN}"
+        echo "sn_token=${TOKEN}" >> "$GITHUB_OUTPUT"
+
     - name: Build change-request JSON and close if needed
       id: build-json
       shell: bash
       env:
-        SN_TOKEN: ${{ inputs.SN_DEVOPS_INTEGRATION_TOKEN }}
+        SN_TOKEN: ${{ steps.get-token.outputs.sn_token }}
         SN_URL:   ${{ inputs.SN_INSTANCE_URL }}
         SN_TOOL:  ${{ inputs.SN_ORCHESTRATION_TOOL_ID }}
       run: |
@@ -108,19 +139,18 @@ runs:
           SYS_ID="${{ inputs.change_request_sys_id }}"
           echo "Closing change request: ${SYS_ID}"
           RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
-            "${SN_URL}/api/sn_devops/devops/change/request?changeRequestNumber=${{ inputs.change_request_number }}" \
+            "${SN_URL}/api/now/table/change_request/${SYS_ID}" \
             -H "Content-Type: application/json" \
-            -H "devops-integration-token: ${SN_TOKEN}" \
-            -H "tool-id: ${SN_TOOL}" \
+            -H "Authorization: Bearer ${SN_TOKEN}" \
             -d "$(jq -cn \
-             --arg state      "${STATE}" \
+              --arg state      "${STATE}" \
               --arg close_code "${CLOSE_CODE}" \
               --arg close_notes "${{ inputs.work-notes }}" \
               '{
                 state:       $state,
                 close_code:  $close_code,
                 close_notes: $close_notes
-              }')")  
+              }')")
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
           echo "HTTP status: ${HTTP_CODE}"
